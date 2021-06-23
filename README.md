@@ -1,1 +1,1 @@
-# multiscale_deeponet
+# opnn_peridyn
