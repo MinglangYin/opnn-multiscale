@@ -1,0 +1,3 @@
+# test_0 (fenics): fenics for heat equation
+# test_1 (opnn): try a DeepONet for heat equation
+# test_2 (FEM + opnn): couple fenics with opnn

@@ -1,0 +1,5 @@
+# test_0 (fenics): save [x, y, t] into txt, print inner domain
+# test_1 (fenics): set BC as random (100 cases)
+# test_2 (fenics): BC as 1 + x^2 + 2*y^2, (1 case) 
+# test_2 (opnn): train a deeponet for poisson equation. Data generated from test_1
+
