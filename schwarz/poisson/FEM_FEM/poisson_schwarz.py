@@ -133,9 +133,6 @@ def main():
             u_s_intp = np.concatenate((u_s_g1_new, u_s_out), axis=0)
             x_s_intp = np.concatenate((g1_coord, o_coord), axis=0)
             u_s_bc_exp = data2exp(np.concatenate((x_s_intp, u_s_intp), axis=1), V_s)
-            # print(u_s_intp)
-            # print(x_s_intp)
-            # exit()
 
             ## step b
             mesh_s_b1 = DirichletBC(V_s, u_s_bc_exp, s_b1)
