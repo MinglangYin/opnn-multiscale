@@ -1,8 +1,6 @@
 """
 Author: Minglang Yin. minglang_yin@brown.edu
-
-Coupling a FEM solver with a DeepONet for poisson equation
-
+Coupling a FEM solver with a DeepONet for poisson equation (Quasi-continuum)
 div(grad(u)) = -f, Omage = [0, 1]*[0, 1], f = 1
 """
 
