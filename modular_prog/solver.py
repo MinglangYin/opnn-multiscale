@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 
 from fenics import *
 
@@ -16,8 +17,8 @@ class solver_fem(object):
     def interpolate(self, x):
         u_intp = []
         for x_tmp in x:
-            u_intp.append(u(x_tmp))
-        return np.array(u_intp)
+            u_intp.append(self.u(x_tmp))
+        return np.array(u_intp)[:, None]
 
 class opnn(nn.Module):
     def __init__(self, branch_dim, trunk_dim):

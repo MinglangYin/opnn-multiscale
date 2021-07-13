@@ -9,12 +9,12 @@ from solver import *
 from coupling import *
 
 def main():
-    mesh1, mesh2, x_g1, x_g2, x_go, x_s, x_p = gen_mesh()
+    mesh_s, mesh_p, x_g1, x_g2, x_go, x_s, x_p = gen_mesh()
 
     ## FEM solver (domain s)
     u_true = Expression('1 + x[0]*x[0] + 2*x[1]*x[1]', degree=2)
     u_o = Expression('0', degree=1)
-    V_s = FunctionSpace(mesh1, "P", 1)
+    V_s = FunctionSpace(mesh_s, "P", 1)
     u_s = TrialFunction(V_s)
     v_s = TestFunction(V_s)
 
@@ -32,7 +32,7 @@ def main():
     bc_g1 = DirichletBC(V_s, u_o, exp_g1)
 
     ## FEM solver (domain p)
-    V_p = FunctionSpace(mesh2, "P", 1)
+    V_p = FunctionSpace(mesh_p, "P", 1)
     u_es = interpolate(u_true, V_s)
     u_ep = interpolate(u_true, V_p)
 
@@ -53,7 +53,10 @@ def main():
         "bc_g1": bc_g1,
         "x_go": x_go,
         "x_s": x_s,
-        "u_es": u_es
+        "u_es": u_es,
+        "V_s": V_s,
+        "mesh_s": mesh_s,
+        "exp_g1": exp_g1
     }
     dict_opnn = {
         "model": model_opnn,
@@ -62,12 +65,14 @@ def main():
         "device": device,
         "x_p": x_p,
         "u_ep": u_ep,
-        "dim_in": dim_in
+        "dim_in": dim_in,
+        "V_p": V_p,
+        "mesh_p": mesh_p
     }
 
-    MSC = Schwarz(dict_fem, dict_opnn, eps = 0.01, norm = "L2")
-    MSC.run(niter = 20)
-    # MSC.saveplot()
+    MSC = Schwarz(dict_fem, dict_opnn)
+    MSC.run(niter = 20, eps = 0.001, norm = "L2")
+    MSC.saveplot() 
 
 if __name__ == "__main__":
     main()

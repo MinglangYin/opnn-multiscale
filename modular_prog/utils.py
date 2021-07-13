@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 import matplotlib.pyplot as plt
 
 from dolfin import *
@@ -30,7 +31,7 @@ def to_numpy(input):
 
 ## temporary method for generating square meshes
 def gen_mesh():
-    dim = 16
+    dim = 17
     gemma0_x, gemma0_y = 0.0, 1.0
     gemma1_x, gemma1_y = 0.4, 0.6
     gemma2_x, gemma2_y = 0.3, 0.7

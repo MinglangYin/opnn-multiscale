@@ -182,7 +182,6 @@ def main():
     u_s_g2_old = np.zeros((dim*4, 1))
     u_s_g2_new = np.zeros((dim*4, 1))
 
-    u_p_g1_old = np.zeros((dim*4, 1))
     u_p_g2_old = np.zeros((dim*4, 1))
     u_p_g2_new = np.zeros((dim*4, 1))
 
