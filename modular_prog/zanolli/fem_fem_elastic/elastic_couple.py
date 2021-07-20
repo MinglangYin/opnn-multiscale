@@ -26,10 +26,12 @@ def data2exp_2d(data, V):
 
     class ExpressionFromScipyFunction(UserExpression):
         def __init__(self, f, **kwargs):
-            self._f = f
+            self._f1 = f[0]
+            self._f2 = f[1]
             UserExpression.__init__(self, **kwargs)
         def eval(self, values, x):
-            values[:] = self._f(*x)
+            values[0] = self._f1(*x)
+            values[1] = self._f2(*x)
 
     u = ExpressionFromScipyFunction((interpolant1, interpolant2), element=V.ufl_element())
     return u
@@ -86,6 +88,14 @@ x_intf_left = np.concatenate((ones*0.3, x_lin), axis=1)
 x_intf_right = np.concatenate((ones*0.7, x_lin), axis=1)
 x_intf = np.concatenate((x_intf_top, x_intf_bot, x_intf_left, x_intf_right), axis=0)
 
+x_lin = np.linspace(0.0, 1.0, dim)[:, None]
+ones = np.ones((dim, 1))
+x_out_top = np.concatenate((x_lin, ones), axis=1)
+x_out_bot = np.concatenate((x_lin, ones*0.0), axis=1)
+x_out_left = np.concatenate((ones*0.0, x_lin), axis=1)
+x_out_right = np.concatenate((ones, x_lin), axis=1)
+x_out_b = np.concatenate((x_out_top, x_out_bot, x_out_left, x_out_right), axis=0)
+
 ## model out
 W_out = TensorFunctionSpace(mesh_out, "P", 2)
 V_out = VectorFunctionSpace(mesh_out, "P", 2)
@@ -109,19 +119,38 @@ a_out = inner(sigma(u_out), epsilon(v_out))*dx
 L_out = dot(f_out, v_out)*dx + dot(T_out, v_out)*ds(1) ## ds is on the boundary
 
 ## model in
-u_init = Expression( ("0.0","0.0"), degree=1)
 W_in = TensorFunctionSpace(mesh_in, "P", 2)
 V_in = VectorFunctionSpace(mesh_in, "P", 2)
 def in_boundary(x, on_boundary):
-    return on_boundary and (abs(x[0] - 0.3) < DOLFIN_EPS or abs(x[0] - 0.7) < DOLFIN_EPS \
-            or abs(x[1] - 0.3) < DOLFIN_EPS or abs(x[1] - 0.7) < DOLFIN_EPS)
-bc_in = DirichletBC(V_in, u_init, in_boundary)
+    return on_boundary and x[0] >= 0.3-DOLFIN_EPS and x[0] <= 0.7+DOLFIN_EPS \
+        and x[1] >= 0.3-DOLFIN_EPS and x[1] <= 0.7+DOLFIN_EPS
+# bc_in = DirichletBC(V_in, u_init, in_boundary)
+
+boundaries_in = MeshFunction("size_t", mesh_in, mesh_in.topology().dim() - 1)
+boundaries_in.set_all(0)
+
+top = AutoSubDomain(lambda x: near(x[1], 0.7))
+top.mark(boundaries, 1)
+bot = AutoSubDomain(lambda x: near(x[1], 0.3))
+bot.mark(boundaries, 2)
+left = AutoSubDomain(lambda x: near(x[0], 0.3))
+left.mark(boundaries, 3)
+right = AutoSubDomain(lambda x: near(x[0], 0.7))
+right.mark(boundaries, 4)
+ds_in = ds(subdomain_data=boundaries_in)
 
 u_in = TrialFunction(V_in)
 v_in = TestFunction(V_in)
 f_in = Constant((0, 0))
-a_in = inner(sigma(u_in), epsilon(v_in))*dx
-L_in = dot(f_in, v_in)*dx
+f_top = Constant((0, 0))
+f_bot = Constant((0, 0))
+f_left = Constant((0, 0))
+f_right = Constant((0, 0))
+F_in = - inner(sigma(u_in), epsilon(v_in))*dx + dot(f_in, v_in)*dx\
+        + dot(f_top, v_in)*ds_in(1) + dot(f_bot, v_in)*ds_in(2)\
+        + dot(f_left, v_in)*ds_in(3) + dot(f_right, v_in)*ds_in(4)
+a_in = lhs(F_in)
+L_in = rhs(F_in)
 
 ## true solution
 u_e = get_true_sol()
@@ -133,7 +162,7 @@ u_e_in = projection(u_e, x_in)
 #     return on_boundary and abs(x[0] - 0.3)<tol or abs(x[0] - 0.7)<tol or abs(x[1] - 0.3)<tol or abs(x[1] - 0.7)<tol
 
 eps = 1e-10
-niter = 2
+niter = 1
 lmd = 0.0
 theta = 0.25
 err_his = []
@@ -146,20 +175,28 @@ for iter in range(0, niter):
         
         ## model(in)
         u_in = Function(V_in)
-        solve(a_in == L_in, u_in, bc_in)
+        solve(a_in == L_in, u_in)
 
     else:
         ## model(out)
-        bc_out_in = data2exp_2d(np.concatenate((x_intf, lmd), axis=1), V_out)
-        exit()
-        bc_out_inner = DirichletBC(V_out, (bc_u, bc_v), in_boundary)
-        u_out = solve(a_out == L_out, u_out, [bc_out_bot, bc_out_inner])
-        exit()
-    
+        u_out_b = projection(u_out, x_out_b)
+        ux1_tmp = np.concatenate((x_out_b, u_out_b), axis=1)
+        ux2_tmp = np.concatenate((x_intf, lmd), axis=1)
+        ux_tmp = np.concatenate((ux1_tmp, ux2_tmp), axis=0)
+        bc_out_exp = data2exp_2d(ux_tmp, V_out) ## careful with the interpolation
+        bc_out_inner = DirichletBC(V_out, bc_out_exp, in_boundary)
+
+        solve(a_out == L_out, u_out, [bc_out_bot, bc_out_inner])
+
         ## model(in)
+
+        ux_tmp
+        T_top = data2exp_2d(ux_tmp, V_out)
+        # T_top = 
+
+        
+
         # u_out = solve
-        u1_x = project(u1.dx(0), V1)
-        u_intf_x = u1_x(x_intf)
 
     ## dynamic theta
     # if iter == 0:
