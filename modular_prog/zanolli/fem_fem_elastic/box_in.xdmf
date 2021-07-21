@@ -4,18 +4,18 @@
   <Domain>
     <Grid Name="TimeSeries" GridType="Collection" CollectionType="Temporal">
       <Grid Name="mesh" GridType="Uniform">
-        <Topology NumberOfElements="3175" TopologyType="Triangle" NodesPerElement="3">
-          <DataItem Dimensions="3175 3" NumberType="UInt" Format="HDF">box_in.h5:/Mesh/0/mesh/topology</DataItem>
+        <Topology NumberOfElements="2683" TopologyType="Triangle" NodesPerElement="3">
+          <DataItem Dimensions="2683 3" NumberType="UInt" Format="HDF">box_in.h5:/Mesh/0/mesh/topology</DataItem>
         </Topology>
         <Geometry GeometryType="XY">
-          <DataItem Dimensions="1656 2" Format="HDF">box_in.h5:/Mesh/0/mesh/geometry</DataItem>
+          <DataItem Dimensions="1416 2" Format="HDF">box_in.h5:/Mesh/0/mesh/geometry</DataItem>
         </Geometry>
         <Time Value="0" />
-        <Attribute Name="f_97" AttributeType="Vector" Center="Node">
-          <DataItem Dimensions="1656 3" Format="HDF">box_in.h5:/VisualisationVector/0</DataItem>
+        <Attribute Name="f_348" AttributeType="Vector" Center="Node">
+          <DataItem Dimensions="1416 3" Format="HDF">box_in.h5:/VisualisationVector/0</DataItem>
         </Attribute>
-        <Attribute Name="f_131" AttributeType="Tensor" Center="Node">
-          <DataItem Dimensions="1656 9" Format="HDF">box_in.h5:/VisualisationVector/1</DataItem>
+        <Attribute Name="f_382" AttributeType="Tensor" Center="Node">
+          <DataItem Dimensions="1416 9" Format="HDF">box_in.h5:/VisualisationVector/1</DataItem>
         </Attribute>
       </Grid>
     </Grid>

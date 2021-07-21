@@ -40,6 +40,7 @@ def get_true_sol():
     square_out = Rectangle(Point(0,0), Point(1.0, 1.0))
     mesh_e = generate_mesh(square_out, 32)
 
+    W_e = TensorFunctionSpace(mesh_e, "P", 2)
     V_e = VectorFunctionSpace(mesh_e, "P", 2)
     bc_e_bot = DirichletBC(V_e, Constant((0, 0)), clamped_boundary)
 
@@ -59,6 +60,8 @@ def get_true_sol():
 
     u_e = Function(V_e)
     solve(a_e == L_e, u_e, bc_e_bot)
+
+    sigma_u_e = project(sigma(u_e), W_e)
     return u_e
 
 ## parameters
@@ -68,33 +71,40 @@ h = 0.4
 lambda_ = 1.25
 tol = 1e-14
 g = 9.8
-force = 0.2
+force = 1
 dim = 11
+
+eps = 1e-10
+niter = 5
+theta = 0.25
 
 ## mesh
 square_out = Rectangle(Point(0,0), Point(1.0, 1.0))
-square_in = Rectangle(Point(0.3,0.3), Point(0.7, 0.7))
+square_in = Rectangle(Point(0.3,0.0), Point(0.7, 0.7))
 mesh_out = generate_mesh(square_out - square_in, 32)
 mesh_in = generate_mesh(square_in, 32)
 
 x_out = mesh_out.coordinates()
 x_in = mesh_in.coordinates()
 
-x_lin = np.linspace(0.3, 0.7, dim)[:, None]
+x_v = np.linspace(0.0, 0.7, dim)[:, None]
+x_h = np.linspace(0.3, 0.7, dim)[:, None]
 ones = np.ones((dim, 1))
-x_intf_top = np.concatenate((x_lin, ones*0.7), axis=1)
-x_intf_bot = np.concatenate((x_lin, ones*0.3), axis=1)
-x_intf_left = np.concatenate((ones*0.3, x_lin), axis=1)
-x_intf_right = np.concatenate((ones*0.7, x_lin), axis=1)
-x_intf = np.concatenate((x_intf_top, x_intf_bot, x_intf_left, x_intf_right), axis=0)
+x_intf_top = np.concatenate((x_h, ones*0.7), axis=1)
+x_intf_left = np.concatenate((ones*0.3, x_v), axis=1)
+x_intf_right = np.concatenate((ones*0.7, x_v), axis=1)
+x_intf = np.concatenate((x_intf_top, x_intf_left, x_intf_right), axis=0)
+
+x_intf_bot = np.concatenate((x_h, ones*0.0), axis=1)
+
 
 x_lin = np.linspace(0.0, 1.0, dim)[:, None]
 ones = np.ones((dim, 1))
 x_out_top = np.concatenate((x_lin, ones), axis=1)
-x_out_bot = np.concatenate((x_lin, ones*0.0), axis=1)
 x_out_left = np.concatenate((ones*0.0, x_lin), axis=1)
 x_out_right = np.concatenate((ones, x_lin), axis=1)
-x_out_b = np.concatenate((x_out_top, x_out_bot, x_out_left, x_out_right), axis=0)
+x_out_b = np.concatenate((x_out_top, x_out_left, x_out_right), axis=0)
+
 
 ## model out
 W_out = TensorFunctionSpace(mesh_out, "P", 2)
@@ -110,6 +120,11 @@ top = AutoSubDomain(lambda x: near(x[1], 1))
 top.mark(boundaries, 1)
 ds = ds(subdomain_data=boundaries)
 
+def in_boundary(x, on_boundary):
+    return on_boundary and x[0] >= 0.3-DOLFIN_EPS and x[0] <= 0.7+DOLFIN_EPS \
+        and x[1] <= 0.7+DOLFIN_EPS
+bc_out_inner = DirichletBC(V_out, ("0", "0"), in_boundary)
+
 u_out = TrialFunction(V_out)
 d = u_out.geometric_dimension()
 v_out = TestFunction(V_out)
@@ -121,36 +136,32 @@ L_out = dot(f_out, v_out)*dx + dot(T_out, v_out)*ds(1) ## ds is on the boundary
 ## model in
 W_in = TensorFunctionSpace(mesh_in, "P", 2)
 V_in = VectorFunctionSpace(mesh_in, "P", 2)
-def in_boundary(x, on_boundary):
-    return on_boundary and x[0] >= 0.3-DOLFIN_EPS and x[0] <= 0.7+DOLFIN_EPS \
-        and x[1] >= 0.3-DOLFIN_EPS and x[1] <= 0.7+DOLFIN_EPS
-# bc_in = DirichletBC(V_in, u_init, in_boundary)
 
 boundaries_in = MeshFunction("size_t", mesh_in, mesh_in.topology().dim() - 1)
 boundaries_in.set_all(0)
 
 top = AutoSubDomain(lambda x: near(x[1], 0.7))
-top.mark(boundaries, 1)
-bot = AutoSubDomain(lambda x: near(x[1], 0.3))
-bot.mark(boundaries, 2)
+top.mark(boundaries_in, 1)
 left = AutoSubDomain(lambda x: near(x[0], 0.3))
-left.mark(boundaries, 3)
+left.mark(boundaries_in, 2)
 right = AutoSubDomain(lambda x: near(x[0], 0.7))
-right.mark(boundaries, 4)
+right.mark(boundaries_in, 3)
 ds_in = ds(subdomain_data=boundaries_in)
 
-u_in = TrialFunction(V_in)
-v_in = TestFunction(V_in)
-f_in = Constant((0, 0))
-f_top = Constant((0, 0))
-f_bot = Constant((0, 0))
-f_left = Constant((0, 0))
-f_right = Constant((0, 0))
-F_in = - inner(sigma(u_in), epsilon(v_in))*dx + dot(f_in, v_in)*dx\
-        + dot(f_top, v_in)*ds_in(1) + dot(f_bot, v_in)*ds_in(2)\
-        + dot(f_left, v_in)*ds_in(3) + dot(f_right, v_in)*ds_in(4)
-a_in = lhs(F_in)
-L_in = rhs(F_in)
+bc_in_bot = DirichletBC(V_in, Constant((0, 0)), clamped_boundary)
+
+# u_in = TrialFunction(V_in)
+# v_in = TestFunction(V_in)
+# f_in = Constant((0, 0))
+# f_top = Constant((0, 0))
+# f_bot = Constant((0, 0))
+# f_left = Constant((0, 0))
+# f_right = Constant((0, 0))
+# F_in = - inner(sigma(u_in), epsilon(v_in))*dx + dot(f_in, v_in)*dx\
+#         + dot(f_top, v_in)*ds_in(1) + dot(f_left, v_in)*ds_in(2)\
+#         + dot(f_right, v_in)*ds_in(3)
+# a_in = lhs(F_in)
+# L_in = rhs(F_in)
 
 ## true solution
 u_e = get_true_sol()
@@ -161,21 +172,18 @@ u_e_in = projection(u_e, x_in)
 # def inner_boundary(x, on_boundary):
 #     return on_boundary and abs(x[0] - 0.3)<tol or abs(x[0] - 0.7)<tol or abs(x[1] - 0.3)<tol or abs(x[1] - 0.7)<tol
 
-eps = 1e-10
-niter = 1
-lmd = 0.0
-theta = 0.25
+dir_top = np.array([[0, 0], [1, 0], [0, 0], [0, 1]])
+dir_bot = np.array([[0, 0], [-1, 0], [0, 0], [0, -1]])
+dir_left = np.array([[-1, 0], [0, 0], [0, -1], [0, 0]])
+dir_right = np.array([[1, 0], [0, 0], [0, 1], [0, 0]])
+
 err_his = []
 dyn_theta = 0
 for iter in range(0, niter):
     if iter == 0:
         ## model(out)
         u_out = Function(V_out)
-        solve(a_out == L_out, u_out, bc_out_bot)
-        
-        ## model(in)
-        u_in = Function(V_in)
-        solve(a_in == L_in, u_in)
+        solve(a_out == L_out, u_out, [bc_out_bot, bc_out_inner])
 
     else:
         ## model(out)
@@ -183,20 +191,74 @@ for iter in range(0, niter):
         ux1_tmp = np.concatenate((x_out_b, u_out_b), axis=1)
         ux2_tmp = np.concatenate((x_intf, lmd), axis=1)
         ux_tmp = np.concatenate((ux1_tmp, ux2_tmp), axis=0)
+        # print(ux_tmp)
         bc_out_exp = data2exp_2d(ux_tmp, V_out) ## careful with the interpolation
+
+        ######
+        V_out = VectorFunctionSpace(mesh_out, "P", 2)
+
+        bc_out_bot = DirichletBC(V_out, Constant((0, 0)), clamped_boundary)
+
+        # boundaries = MeshFunction("size_t", mesh_out, mesh_out.topology().dim() - 1)
+        # boundaries.set_all(0)
+        # top = AutoSubDomain(lambda x: near(x[1], 1))
+        # top.mark(boundaries, 1)
+        # ds = ds(subdomain_data=boundaries)
+
+        # def in_boundary(x, on_boundary):
+        #     return on_boundary and x[0] >= 0.3-DOLFIN_EPS and x[0] <= 0.7+DOLFIN_EPS \
+        #         and x[1] >= 0.3-DOLFIN_EPS and x[1] <= 0.7+DOLFIN_EPS
+
         bc_out_inner = DirichletBC(V_out, bc_out_exp, in_boundary)
 
+        u_out = TrialFunction(V_out)
+        v_out = TestFunction(V_out)
+        f_out = Constant((0, 0))
+        T_out = Constant((0, force))
+        a_out = inner(sigma(u_out), epsilon(v_out))*dx
+        L_out = dot(f_out, v_out)*dx + dot(T_out, v_out)*ds(1) ## ds is on the boundary
+
+        u_out = Function(V_out)
         solve(a_out == L_out, u_out, [bc_out_bot, bc_out_inner])
 
-        ## model(in)
+    ## model(in)
+    # W_in = TensorFunctionSpace(mesh_in, "P", 2)
+    sigma_out = project(sigma(u_out), W_out)
+    sigma_intf_top = np.matmul(-projection(sigma_out, x_intf_top), dir_top)
+    sigma_intf_left = np.matmul(-projection(sigma_out, x_intf_left), dir_left)
+    sigma_intf_right = np.matmul(-projection(sigma_out, x_intf_right), dir_right)
 
-        ux_tmp
-        T_top = data2exp_2d(ux_tmp, V_out)
-        # T_top = 
+    # print(-projection(sigma_out, x_intf_top))
+    # print(sigma_intf_top)
+    # print(-projection(sigma_out, x_intf_left))
+    # print(sigma_intf_left)
+    # print(-projection(sigma_out, x_intf_right))
+    # print(sigma_intf_right)
+    # exit()
 
-        
+    ux_top = np.concatenate((x_intf_top, sigma_intf_top), axis=1)
+    ux_left = np.concatenate((x_intf_left, sigma_intf_left), axis=1)
+    ux_right = np.concatenate((x_intf_right, sigma_intf_right), axis=1)
 
-        # u_out = solve
+    u_intf_bot = np.zeros_like(x_intf_bot)
+    ux_bot = np.concatenate((x_intf_bot, u_intf_bot), axis=1)
+
+    ux_t = np.concatenate((ux_top, ux_bot), axis=0)
+    ux_lr = np.concatenate((ux_left, ux_right), axis=0)
+    f_t = data2exp_2d(ux_t, V_in)
+    f_lr = data2exp_2d(ux_lr, V_in)
+
+    f_in = Constant((0, 0))
+
+    u_in = TrialFunction(V_in)
+    v_in = TestFunction(V_in)
+    F_in = - inner(sigma(u_in), epsilon(v_in))*dx + dot(f_in, v_in)*dx\
+            + dot(f_t, v_in)*ds_in(1) + dot(f_lr, v_in)*ds_in(2) + dot(f_lr, v_in)*ds_in(3)
+    a_in = lhs(F_in)
+    L_in = rhs(F_in)
+
+    u_in = Function(V_in)
+    solve(a_in == L_in, u_in, bc_in_bot)
 
     ## dynamic theta
     # if iter == 0:
@@ -227,7 +289,6 @@ for iter in range(0, niter):
 
 err_his = np.array(err_his)
 
-
 ##
 sigma_u_out = project(sigma(u_out), W_out)
 sigma_u_in = project(sigma(u_in), W_in)
@@ -244,3 +305,18 @@ file_results.parameters["flush_output"] = True
 file_results.parameters["functions_share_mesh"] = True
 file_results.write(u_in, 0.)
 file_results.write(sigma_u_in, 0.)
+
+##
+fig = plt.figure(constrained_layout=False, figsize=(4, 4))
+gs = fig.add_gridspec(1, 1)
+ax = fig.add_subplot(gs[0])
+ax.plot(err_his[:, 0], color='blue', label='$u1$ (FEM1)')
+ax.plot(err_his[:, 1], color='red', label='$u2$ (FEM2)')
+# ax.axhline(y=eps, linestyle='--', color='black',  label='$\epsilon$')
+
+ax.set_xlabel('# iter')
+ax.set_ylabel('$L_{2}$ error')
+ax.set_yscale('log')
+ax.legend()
+plt.savefig("convergence.png")
+plt.close()
