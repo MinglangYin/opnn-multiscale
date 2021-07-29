@@ -67,15 +67,11 @@ def get_true_sol():
 ## parameters
 mu = 1
 rho = 1
-h = 0.4
 lambda_ = 1.25
-tol = 1e-14
-g = 9.8
 force = 1
 dim = 11
-
 eps = 1e-10
-niter = 5
+niter = 10
 theta = 0.25
 
 ## mesh
@@ -93,10 +89,8 @@ ones = np.ones((dim, 1))
 x_intf_top = np.concatenate((x_h, ones*0.7), axis=1)
 x_intf_left = np.concatenate((ones*0.3, x_v), axis=1)
 x_intf_right = np.concatenate((ones*0.7, x_v), axis=1)
-x_intf = np.concatenate((x_intf_top, x_intf_left, x_intf_right), axis=0)
-
 x_intf_bot = np.concatenate((x_h, ones*0.0), axis=1)
-
+x_intf = np.concatenate((x_intf_top, x_intf_left, x_intf_right), axis=0)
 
 x_lin = np.linspace(0.0, 1.0, dim)[:, None]
 ones = np.ones((dim, 1))
@@ -105,12 +99,11 @@ x_out_left = np.concatenate((ones*0.0, x_lin), axis=1)
 x_out_right = np.concatenate((ones, x_lin), axis=1)
 x_out_b = np.concatenate((x_out_top, x_out_left, x_out_right), axis=0)
 
-
 ## model out
 W_out = TensorFunctionSpace(mesh_out, "P", 2)
 V_out = VectorFunctionSpace(mesh_out, "P", 2)
 def clamped_boundary(x, on_boundary):
-    return on_boundary and x[1]<tol
+    return on_boundary and x[1] < eps
 bc_out_bot = DirichletBC(V_out, Constant((0, 0)), clamped_boundary)
 
 boundaries = MeshFunction("size_t", mesh_out, mesh_out.topology().dim() - 1)
@@ -150,19 +143,6 @@ ds_in = ds(subdomain_data=boundaries_in)
 
 bc_in_bot = DirichletBC(V_in, Constant((0, 0)), clamped_boundary)
 
-# u_in = TrialFunction(V_in)
-# v_in = TestFunction(V_in)
-# f_in = Constant((0, 0))
-# f_top = Constant((0, 0))
-# f_bot = Constant((0, 0))
-# f_left = Constant((0, 0))
-# f_right = Constant((0, 0))
-# F_in = - inner(sigma(u_in), epsilon(v_in))*dx + dot(f_in, v_in)*dx\
-#         + dot(f_top, v_in)*ds_in(1) + dot(f_left, v_in)*ds_in(2)\
-#         + dot(f_right, v_in)*ds_in(3)
-# a_in = lhs(F_in)
-# L_in = rhs(F_in)
-
 ## true solution
 u_e = get_true_sol()
 u_e_out = projection(u_e, x_out)
@@ -187,16 +167,16 @@ for iter in range(0, niter):
 
     else:
         ## model(out)
-        u_out_b = projection(u_out, x_out_b)
-        ux1_tmp = np.concatenate((x_out_b, u_out_b), axis=1)
+        # u_out_b = projection(u_out, x_out_b)
+        # ux1_tmp = np.concatenate((x_out_b, u_out_b), axis=1)
         ux2_tmp = np.concatenate((x_intf, lmd), axis=1)
-        ux_tmp = np.concatenate((ux1_tmp, ux2_tmp), axis=0)
-        # print(ux_tmp)
-        bc_out_exp = data2exp_2d(ux_tmp, V_out) ## careful with the interpolation
+        # ux_tmp = np.concatenate((ux1_tmp, ux2_tmp), axis=0)
+
+        # bc_out_exp = data2exp_2d(ux_tmp, V_out) ## careful with the interpolation
+        bc_out_exp = data2exp_2d(ux2_tmp, V_out) ## careful with the interpolation
 
         ######
         V_out = VectorFunctionSpace(mesh_out, "P", 2)
-
         bc_out_bot = DirichletBC(V_out, Constant((0, 0)), clamped_boundary)
 
         # boundaries = MeshFunction("size_t", mesh_out, mesh_out.topology().dim() - 1)
@@ -224,9 +204,9 @@ for iter in range(0, niter):
     ## model(in)
     # W_in = TensorFunctionSpace(mesh_in, "P", 2)
     sigma_out = project(sigma(u_out), W_out)
-    sigma_intf_top = np.matmul(-projection(sigma_out, x_intf_top), dir_top)
-    sigma_intf_left = np.matmul(-projection(sigma_out, x_intf_left), dir_left)
-    sigma_intf_right = np.matmul(-projection(sigma_out, x_intf_right), dir_right)
+    sigma_intf_top = np.matmul(projection(sigma_out, x_intf_top), dir_top)
+    sigma_intf_left = np.matmul(projection(sigma_out, x_intf_left), dir_left)
+    sigma_intf_right = np.matmul(projection(sigma_out, x_intf_right), dir_right)
 
     # print(-projection(sigma_out, x_intf_top))
     # print(sigma_intf_top)
@@ -249,7 +229,6 @@ for iter in range(0, niter):
     f_lr = data2exp_2d(ux_lr, V_in)
 
     f_in = Constant((0, 0))
-
     u_in = TrialFunction(V_in)
     v_in = TestFunction(V_in)
     F_in = - inner(sigma(u_in), epsilon(v_in))*dx + dot(f_in, v_in)*dx\
@@ -298,7 +277,6 @@ file_results.parameters["flush_output"] = True
 file_results.parameters["functions_share_mesh"] = True
 file_results.write(u_out, 0.)
 file_results.write(sigma_u_out, 0.)
-
 
 file_results = XDMFFile("box_in.xdmf")
 file_results.parameters["flush_output"] = True

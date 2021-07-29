@@ -44,11 +44,11 @@ def main():
 
     ## multiscale coupling
     eps = 1e-10
-    niter = 20
+    niter = 50
     lmd = 0.0
     theta = 0.25
     err_his = []
-    dyn_theta = 0
+    dyn_theta = 1
     for iter in range(0, niter):
         ## model 1
         g1 = Expression("alpha", degree = 1, alpha = lmd)
