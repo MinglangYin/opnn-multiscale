@@ -6,7 +6,6 @@ from ufl import nabla_div
 from mshr import *
 from scipy.interpolate import interp2d
 
-
 def epsilon(u):
     return 0.5*(nabla_grad(u)+nabla_grad(u).T)
 
@@ -38,7 +37,7 @@ def data2exp_2d(data, V):
 
 def get_true_sol():
     square_out = Rectangle(Point(0,0), Point(1.0, 1.0))
-    mesh_e = generate_mesh(square_out, 32)
+    mesh_e = generate_mesh(square_out, 64)
 
     W_e = TensorFunctionSpace(mesh_e, "P", 2)
     V_e = VectorFunctionSpace(mesh_e, "P", 2)
@@ -111,7 +110,7 @@ boundaries.set_all(0)
 
 top = AutoSubDomain(lambda x: near(x[1], 1))
 top.mark(boundaries, 1)
-ds = ds(subdomain_data=boundaries)
+ds_out = ds(subdomain_data=boundaries)
 
 def in_boundary(x, on_boundary):
     return on_boundary and x[0] >= 0.3-DOLFIN_EPS and x[0] <= 0.7+DOLFIN_EPS \
@@ -122,9 +121,14 @@ u_out = TrialFunction(V_out)
 d = u_out.geometric_dimension()
 v_out = TestFunction(V_out)
 f_out = Constant((0, 0))
-T_out = Constant((0, force))
+T_out = Constant((0, force)) ## traction on the top surface
 a_out = inner(sigma(u_out), epsilon(v_out))*dx
-L_out = dot(f_out, v_out)*dx + dot(T_out, v_out)*ds(1) ## ds is on the boundary
+L_out = dot(f_out, v_out)*dx + dot(T_out, v_out)*ds_out(1) ## ds is on the boundary
+
+##### The above is clean #####
+##############################
+##############################
+
 
 ## model in
 W_in = TensorFunctionSpace(mesh_in, "P", 2)
@@ -152,10 +156,10 @@ u_e_in = projection(u_e, x_in)
 # def inner_boundary(x, on_boundary):
 #     return on_boundary and abs(x[0] - 0.3)<tol or abs(x[0] - 0.7)<tol or abs(x[1] - 0.3)<tol or abs(x[1] - 0.7)<tol
 
-dir_top = np.array([[0, 0], [1, 0], [0, 0], [0, 1]])
-dir_bot = np.array([[0, 0], [-1, 0], [0, 0], [0, -1]])
-dir_left = np.array([[-1, 0], [0, 0], [0, -1], [0, 0]])
-dir_right = np.array([[1, 0], [0, 0], [0, 1], [0, 0]])
+dir_top = np.array([[0, 0], [-1, 0], [0, 0], [0, -1]])
+# dir_bot = np.array([[0, 0], [-1, 0], [0, 0], [0, -1]])
+dir_left = np.array([[1, 0], [0, 0], [0, 1], [0, 0]])
+dir_right = np.array([[-1, 0], [0, 0], [0, -1], [0, 0]])
 
 err_his = []
 dyn_theta = 0
@@ -167,27 +171,16 @@ for iter in range(0, niter):
 
     else:
         ## model(out)
-        # u_out_b = projection(u_out, x_out_b)
-        # ux1_tmp = np.concatenate((x_out_b, u_out_b), axis=1)
+        u_out_b = projection(u_out, x_out_b)
+        ux1_tmp = np.concatenate((x_out_b, u_out_b), axis=1)
         ux2_tmp = np.concatenate((x_intf, lmd), axis=1)
-        # ux_tmp = np.concatenate((ux1_tmp, ux2_tmp), axis=0)
+        ux_tmp = np.concatenate((ux1_tmp, ux2_tmp), axis=0)
 
-        # bc_out_exp = data2exp_2d(ux_tmp, V_out) ## careful with the interpolation
-        bc_out_exp = data2exp_2d(ux2_tmp, V_out) ## careful with the interpolation
+        bc_out_exp = data2exp_2d(ux_tmp, V_out) ## careful with the interpolation
 
         ######
         V_out = VectorFunctionSpace(mesh_out, "P", 2)
         bc_out_bot = DirichletBC(V_out, Constant((0, 0)), clamped_boundary)
-
-        # boundaries = MeshFunction("size_t", mesh_out, mesh_out.topology().dim() - 1)
-        # boundaries.set_all(0)
-        # top = AutoSubDomain(lambda x: near(x[1], 1))
-        # top.mark(boundaries, 1)
-        # ds = ds(subdomain_data=boundaries)
-
-        # def in_boundary(x, on_boundary):
-        #     return on_boundary and x[0] >= 0.3-DOLFIN_EPS and x[0] <= 0.7+DOLFIN_EPS \
-        #         and x[1] >= 0.3-DOLFIN_EPS and x[1] <= 0.7+DOLFIN_EPS
 
         bc_out_inner = DirichletBC(V_out, bc_out_exp, in_boundary)
 
@@ -196,7 +189,7 @@ for iter in range(0, niter):
         f_out = Constant((0, 0))
         T_out = Constant((0, force))
         a_out = inner(sigma(u_out), epsilon(v_out))*dx
-        L_out = dot(f_out, v_out)*dx + dot(T_out, v_out)*ds(1) ## ds is on the boundary
+        L_out = dot(f_out, v_out)*dx + dot(T_out, v_out)*ds_out(1) ## ds is on the boundary
 
         u_out = Function(V_out)
         solve(a_out == L_out, u_out, [bc_out_bot, bc_out_inner])
@@ -204,21 +197,18 @@ for iter in range(0, niter):
     ## model(in)
     # W_in = TensorFunctionSpace(mesh_in, "P", 2)
     sigma_out = project(sigma(u_out), W_out)
-    sigma_intf_top = np.matmul(projection(sigma_out, x_intf_top), dir_top)
-    sigma_intf_left = np.matmul(projection(sigma_out, x_intf_left), dir_left)
-    sigma_intf_right = np.matmul(projection(sigma_out, x_intf_right), dir_right)
-
-    # print(-projection(sigma_out, x_intf_top))
-    # print(sigma_intf_top)
-    # print(-projection(sigma_out, x_intf_left))
-    # print(sigma_intf_left)
-    # print(-projection(sigma_out, x_intf_right))
-    # print(sigma_intf_right)
-    # exit()
+    sigma_intf_top = -np.matmul(projection(sigma_out, x_intf_top), dir_top)
+    sigma_intf_left = -np.matmul(projection(sigma_out, x_intf_left), dir_left)
+    sigma_intf_right = -np.matmul(projection(sigma_out, x_intf_right), dir_right)
 
     ux_top = np.concatenate((x_intf_top, sigma_intf_top), axis=1)
     ux_left = np.concatenate((x_intf_left, sigma_intf_left), axis=1)
     ux_right = np.concatenate((x_intf_right, sigma_intf_right), axis=1)
+
+    # print(ux_top)
+    # print(ux_left)
+    # print(ux_right)
+    # exit()
 
     u_intf_bot = np.zeros_like(x_intf_bot)
     ux_bot = np.concatenate((x_intf_bot, u_intf_bot), axis=1)
@@ -231,23 +221,51 @@ for iter in range(0, niter):
     f_in = Constant((0, 0))
     u_in = TrialFunction(V_in)
     v_in = TestFunction(V_in)
-    F_in = - inner(sigma(u_in), epsilon(v_in))*dx + dot(f_in, v_in)*dx\
-            + dot(f_t, v_in)*ds_in(1) + dot(f_lr, v_in)*ds_in(2) + dot(f_lr, v_in)*ds_in(3)
-    a_in = lhs(F_in)
-    L_in = rhs(F_in)
+    a_in = inner(sigma(u_in), epsilon(v_in))*dx
+    L_in = dot(f_in, v_in)*dx + dot(f_t, v_in)*ds_in(1) + dot(f_lr, v_in)*ds_in(2) + dot(f_lr, v_in)*ds_in(3)
 
     u_in = Function(V_in)
     solve(a_in == L_in, u_in, bc_in_bot)
 
+
+    ## stress u_in
+    sigma_in = project(sigma(u_in), W_in)
+    sigma_in_top = -np.matmul(projection(sigma_in, x_intf_top), dir_top)
+    sigma_in_left = -np.matmul(projection(sigma_in, x_intf_left), dir_left)
+    sigma_in_right = -np.matmul(projection(sigma_in, x_intf_right), dir_right)
+
+    print(sigma_in_top, sigma_intf_top)
+    print(sigma_in_left, sigma_intf_left)
+    print(sigma_in_right, sigma_intf_right)
+    exit()
+
+
+    # file_results = XDMFFile("box_out.xdmf")
+    # file_results.parameters["flush_output"] = True
+    # file_results.parameters["functions_share_mesh"] = True
+    # file_results.write(u_out, 0.)
+
+    # file_results = XDMFFile("box_in.xdmf")
+    # file_results.parameters["flush_output"] = True
+    # file_results.parameters["functions_share_mesh"] = True
+    # file_results.write(u_in, 0.)
+
+
+
+    exit()
+
     ## dynamic theta
     # if iter == 0:
-    #     u1_old = u1(x_intf)
-    #     u2_old = u2(x_intf)
+    #     u_in_old = projection(u_in, x_intf)
+    #     u_out_old = projection(u_out, x_intf)
     # else:
-    #     u1_new = u1(x_intf)
-    #     u2_new = u2(x_intf)
-    #     e1 = u1_new - u1_old
-    #     e2 = u2_new - u2_old
+    #     u_in_new = projection(u_in, x_intf)
+    #     u_out_new = projection(u_out, x_intf)
+    #     e1 = u_in_new - u_in_old
+    #     e2 = u_out_new - u_out_old
+    #     u_in_old = np.copy(u_in_new)
+    #     u_out_old = np.copy(u_out_new)
+
     #     theta = (e1 * (e1 - e2)).sum()/((e1 - e2)**2).sum()
 
     ## lambda
