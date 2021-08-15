@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# Request 1 CPU core
+#SBATCH --mem=25G
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH -p gpu
+#SBATCH --gres=gpu:1
+
+#SBATCH -t 24:00:00
+#SBATCH -o MyCUDAJob-%j.out
+###SBATCH --exclude=gpu1204
+#SBATCH --nodelist=gpu1403
+
+# Compile CUDA program and run
+~/Environments/PyTorch-GPU/bin/python main.py --epochs 50000
