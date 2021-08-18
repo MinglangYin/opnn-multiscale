@@ -38,10 +38,16 @@ class opnn(nn.Module):
                 )
                 in_channels = h_dim
         self._trunk = nn.Sequential(*modules)
-        self._out_layer = nn.Linear(self.z_dim, 2, bias = True)
+        self._out_layer = nn.Linear(self.z_dim, 1, bias = True)
 
     def forward(self, f, x):
         y_br = self._branch(f)
         y_tr = self._trunk(x) 
-        y_out = self._out_layer(y_br*y_tr)
+        #y_out = self._out_layer(y_br*y_tr)
+        y_out = torch.sum(y_tr*y_br, dim=1)[:, None]
+        
+        #print(y_out.shape)
+        #exit()
+
+        #y_out = torch.sum(y_br*y_tr, dim=1)
         return y_out

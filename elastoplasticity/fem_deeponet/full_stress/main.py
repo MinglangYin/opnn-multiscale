@@ -1,6 +1,9 @@
 """
 Minglang Yin, minglang_yin@brown.edu
 Coupling DeepONet with Linear Finite Element Model
+Note: 
+    s11_model takes scaled displacement as input (disp = disp_old * 100)
+    The output stress is scaled by 10 (disp = disp_old * 100)
 """
 import torch
 import numpy as np
@@ -35,24 +38,38 @@ def find_outside(x):
 ## parameters
 mu = 1/(2*1.3)   # E/(2*(1+nu))
 lambda_ = 0.3/(1.3*0.4)   # E*nu/((1+nu)*(1-2*nu))
-force = 0.08
+
 eps = 1e-6
 niter = 20
 theta = 0.5
 r0 = 0.3
 
+U_scaling = 100
+T_scaling = 10
+
 ########## DeepONet ##########
 device = 'cuda'
 dim_br = [80, 100, 100, 100]
-dim_tr = [2, 100, 100, 100]
+dim_tr = [2, 40, 40, 100]
 
 ## initialization
-model = opnn(dim_br, dim_tr).to(device)
-model = model.float()
+model_s11 = opnn(dim_br, dim_tr).to(device)
+model_s11 = model_s11.float()
+s11_path = "./s11_model/model_chkpts.pt"
+checkpoint = torch.load(s11_path)
+model_s11.load_state_dict(checkpoint["model_state_dict"])
 
-opnn_path = "./CheckPts/model_chkpts.pt"
-checkpoint = torch.load(opnn_path)
-model.load_state_dict(checkpoint["model_state_dict"])
+model_s12 = opnn(dim_br, dim_tr).to(device)
+model_s12 = model_s12.float()
+s12_path = "./s12_model/model_chkpts.pt"
+checkpoint = torch.load(s12_path)
+model_s12.load_state_dict(checkpoint["model_state_dict"])
+
+model_s22 = opnn(dim_br, dim_tr).to(device)
+model_s22 = model_s22.float()
+s22_path = "./s22_model/model_chkpts.pt"
+checkpoint = torch.load(s22_path)
+model_s22.load_state_dict(checkpoint["model_state_dict"])
 
 ## interface and lines
 x_intf = np.loadtxt("x_intf_ext.dat")
@@ -85,16 +102,20 @@ def clamped_boundary(x, on_boundary):
     return on_boundary and x[1] < -1 + eps
 bc_bot = DirichletBC(V, Constant((0, 0)), clamped_boundary)
 
-datafiles = ["datafile/AbaqusOutput_Job-Example-10.npy",
-            "datafile/AbaqusOutput_Job-Example-20.npy",
-            "datafile/AbaqusOutput_Job-Example-30.npy",
-            "datafile/AbaqusOutput_Job-Example-40.npy",
-            "datafile/AbaqusOutput_Job-Example-50.npy",
-            "datafile/AbaqusOutput_Job-Example-60.npy",
-            "datafile/AbaqusOutput_Job-Example-70.npy",
-            "datafile/AbaqusOutput_Job-Example-80.npy",
+# datafiles = ["datafile/AbaqusOutput_Job-Example-10.npy",
+#             "datafile/AbaqusOutput_Job-Example-20.npy",
+#             "datafile/AbaqusOutput_Job-Example-30.npy",
+#             "datafile/AbaqusOutput_Job-Example-40.npy",
+#             "datafile/AbaqusOutput_Job-Example-50.npy",
+#             "datafile/AbaqusOutput_Job-Example-60.npy",
+#             "datafile/AbaqusOutput_Job-Example-70.npy",
+#             "datafile/AbaqusOutput_Job-Example-80.npy",
+#             ]
+# force = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08]
+
+datafiles = ["datafile/AbaqusOutput_Job-Example-80.npy",
             ]
-force = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08]
+force = [0.08]
 
 for id, path in enumerate(datafiles):
     ## Initialization
@@ -118,17 +139,17 @@ for id, path in enumerate(datafiles):
     uy_fem_e = fy_fem_e(mesh_coord[:, 0], mesh_coord[:, 1])[:, None]
     u_fem_e = np.concatenate((ux_fem_e, uy_fem_e), axis=1 )
 
-    fxx_e = Rbf(x_e[:, 0], x_e[:, 1], sigma_e[:, 0])
-    fyy_e = Rbf(x_e[:, 0], x_e[:, 1], sigma_e[:, 1])
-    fxy_e = Rbf(x_e[:, 0], x_e[:, 1], sigma_e[:, 3])
-    sxx_e_intf = fxx_e(x_intf[:, 0], x_intf[:, 1])
-    syy_e_intf = fyy_e(x_intf[:, 0], x_intf[:, 1])
-    sxy_e_intf = fxy_e(x_intf[:, 0], x_intf[:, 1])
+    f11_e = Rbf(x_e[:, 0], x_e[:, 1], sigma_e[:, 0])
+    f22_e = Rbf(x_e[:, 0], x_e[:, 1], sigma_e[:, 1])
+    f12_e = Rbf(x_e[:, 0], x_e[:, 1], sigma_e[:, 3])
+    s11_e_intf = f11_e(x_intf[:, 0], x_intf[:, 1])
+    s22_e_intf = f22_e(x_intf[:, 0], x_intf[:, 1])
+    s12_e_intf = f12_e(x_intf[:, 0], x_intf[:, 1])
 
     nx = x_intf[:, 0]/r0
     ny = x_intf[:, 1]/r0
-    tx = sxx_e_intf*nx+sxy_e_intf*ny
-    ty = sxy_e_intf*nx+syy_e_intf*ny
+    tx = s11_e_intf*nx+s12_e_intf*ny
+    ty = s12_e_intf*nx+s22_e_intf*ny
     t_e = np.concatenate((tx[:, None], ty[:, None]), axis=1) # point toward outside
 
     ########## Multiscale Coupling ##########
@@ -147,8 +168,8 @@ for id, path in enumerate(datafiles):
             sigma_out = projection(project(sigma(u), W), x_out).reshape(-1, 2, 2)     ## stress from FEM
             t_out = np.matmul(sigma_out, n_out[:, :, None])[:, :, 0]                    ## n_intf pointing toward outside   
 
-            t1_fem = np.concatenate((x_out, -t_out), axis=1)
-            t2_fem = np.concatenate((x_intf, -lmd/100), axis=1) ## need to rescale, pointing toward inside
+            t1_fem = np.concatenate((x_out, -t_out), axis=1)        ## need to turn t_out input pointing inward
+            t2_fem = np.concatenate((x_intf, -lmd/T_scaling), axis=1) ## need to rescale, pointing toward inside
             T_fit = np.concatenate((t1_fem, t2_fem), axis=0) 
             T_exp = data2exp_2d(T_fit, V)
 
@@ -162,17 +183,25 @@ for id, path in enumerate(datafiles):
             solve(a == L, u, bc_bot)
 
         ## DeepONet
-        u_intf = projection(u, x_intf)*100             ## interfacial displacement from FEM
+        u_intf = projection(u, x_intf)             ## interfacial displacement from FEM
+        u_intf = u_intf*U_scaling
         
         x_b = u_intf.reshape((1, -1), order='F')
         x_b = np.tile(x_b, (dim_intf, 1))
         x_b_tensor = torch.tensor(x_b, dtype=torch.float).to(device)
-        t_intf = to_numpy(model.forward(x_b_tensor, x_t_tensor))        ## traction, pointing toward outside
-        
+
+        s11_intf = to_numpy(model_s11.forward(x_b_tensor, x_t_tensor))        ## sigma 11
+        s12_intf = to_numpy(model_s12.forward(x_b_tensor, x_t_tensor))        ## sigma 12
+        s22_intf = to_numpy(model_s22.forward(x_b_tensor, x_t_tensor))        ## sigma 22
+
+        tx_intf = s11_intf*nx[:, None] + s12_intf*ny[:, None]
+        ty_intf = s12_intf*nx[:, None] + s22_intf*ny[:, None]
+        t_intf = np.concatenate((tx_intf, ty_intf), axis=1)
+
         ## traction on the interface from FEM
         sigma_intf = projection(project(sigma(u), W), x_intf).reshape(-1, 2, 2)     ## stress from FEM
         lmd = np.matmul(sigma_intf, n_intf[:, :, None])[:, :, 0]                    ## n_intf pointing toward outside
-        lmd = lmd*100                                                               ## scaling!!
+        lmd = lmd*T_scaling                                                               ## scaling!! lmd is traction
 
         ## dynamic theta
         # if iter == 0:
@@ -197,11 +226,8 @@ for id, path in enumerate(datafiles):
         # for diff in tmp:
         #     print(diff)
 
-        # print(t_e-lmd/100)
-        # exit()
-        
         err_1 = ((u_fem_pred - u_fem_e)**2).mean()
-        err_2 = ((lmd/100 - t_e)**2).mean()
+        err_2 = ((lmd/T_scaling - t_e)**2).mean()
         err_his.append( np.array([err_1, err_2]) )
         print(f'iter: {iter}, err_1: {err_1:3g}, err_2: {err_2:3g}')
 
