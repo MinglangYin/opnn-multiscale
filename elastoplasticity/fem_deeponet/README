@@ -1,3 +1,7 @@
 501: the one with true solution
 500: the one without true solution
 1000: more training data for DeepONet
+
+traction_interface: 
+	Training DeepONet with true solution, model converges
+	Training DeepONet without true solution, model doesn't converge
