@@ -58,6 +58,7 @@ end
 close all;
 %%
 %Now uses this solution to compute the POD with the wrapper:
+
 [U_POD, S_POD, V_POD] = pod(Vfield_Snapshots);
 %%
 %Plots the mode energies
