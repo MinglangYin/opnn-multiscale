@@ -1,5 +1,0 @@
-notch_geometry: generate a square with a notch
-SPH: example SPH infiles 
-RandomBC: generate random disp BC on the top and write into new infiles
-dump_file: dumped file from the new infiles. data_extract extracts the last snapshot.
-PODHyperTear: POD modes

@@ -20,7 +20,7 @@ def projection(u, pts):
         u_prj.append(u(x))
     return np.asarray(u_prj)
 
-def data2exp_3d(data, V):
+def data2exp_2d(data, V):
     x, y, values = data[:,0], data[:,1], data[:,2:]
     interpolant1 = Rbf(x, y, values[:, 0:1], copy=False, bounds_error=True)
     interpolant2 = Rbf(x, y, values[:, 1:2], copy=False, bounds_error=True)

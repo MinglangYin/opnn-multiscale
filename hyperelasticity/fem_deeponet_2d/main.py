@@ -25,6 +25,11 @@ def main():
     U_scaling = 10 ## note that it is not confirmed yet!
     S_scaling = 100
 
+    E, nu = 1.0, 0.3
+    K1, K2 = 0.1, 1.5
+    alpha = np.pi/2      
+    kappa = 0
+
     #########################################################################
     ################################## FEM ##################################
     #########################################################################
@@ -42,8 +47,6 @@ def main():
     mesh = generate_mesh(region, 25)
     mesh_coord = mesh.coordinates()
 
-    exit()
-    
     ## function space
     V = VectorFunctionSpace(mesh, "CG", 1)
     W = TensorFunctionSpace(mesh, "CG", 1)
@@ -87,15 +90,12 @@ def main():
     J  = det(F)
 
     # Elasticity parameters
-    E, nu = 1.0, 0.3
-    mu, lmbda = E/(2*(1 + nu)), E*nu/((1 + nu)*(1 - 2*nu))
+    mu = E/(2*(1 + nu))
+    lmbda = E*nu/((1 + nu)*(1 - 2*nu))
     K = E/(3*(1-2*nu))
     print(f'mu: {mu}, lmbda: {lmbda}, K: {K}')
 
     # Stored strain energy density (compressible neo-Hookean model)
-    K1, K2 = 0.1, 1.5
-    alpha = np.pi/2      
-    kappa = 0
     M1 = Constant((np.cos(alpha), np.sin(alpha)))
     M2 = Constant((np.cos(-alpha), np.sin(-alpha)))
 
@@ -173,20 +173,19 @@ def main():
         else:
             ## update T
             PK1 = F*PK2()
-            PK1_out = projection(project(PK1, W), x_out).reshape(-1, 3, 3)    
+            PK1_out = projection(project(PK1, W), x_out).reshape(-1, 2, 2)    
             T_out = np.matmul(PK1_out, N_intf_out[:, :, None])[:, :, 0]
 
             Txy_out = np.concatenate((x_out, -T_out), axis=1)
             Txy_intf = np.concatenate((x_intf, -lmd/S_scaling), axis=1)
             Txy_tmp = np.concatenate((Txy_out, Txy_intf), axis=0) 
-            T_intf = data2exp_3d(Txy_tmp, V)
+            T_intf = data2exp_2d(Txy_tmp, V)
 
             solve(FF == 0, u, bcs, J=Jac, form_compiler_parameters=ffc_options)
 
         ## DeepONet
-        
         u_intf = projection(u, x_intf)*U_scaling
-        x_b = u_intf.flatten()[None, :] # only take disp in x and y
+        x_b = u_intf.flatten()[None, :]
         x_b = np.tile(x_b, (dim_intf, 1))
         x_b_tensor = torch.tensor(x_b, dtype=torch.float).to(device)
 
@@ -200,9 +199,11 @@ def main():
         Txy_intf = np.concatenate((Tx_intf, Ty_intf), axis=1)
 
         ## traction on the interface from FEM
-        PK1_intf = projection(project(PK1, W), x_intf).reshape(-1, 3, 3) 
+        PK1_intf = projection(project(PK1, W), x_intf).reshape(-1, 2, 2) 
         lmd = np.matmul(PK1_intf, N_intf[:, :, None])[:, :, 0]
         lmd = lmd*S_scaling    
+        print(lmd.shape)
+
 
         ## dynamic theta
         # if iter == 0:
@@ -225,6 +226,7 @@ def main():
 
         ## update lambda (traction in x, y direction)
         lmd = theta*Txy_intf + (1 - theta)*lmd
+        print(lmd.shape)
 
         ## error 
         s_fem_pred = projection(project(PK1, W), mesh_coord)
