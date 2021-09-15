@@ -59,8 +59,8 @@ def data_loader(datafile):
 
     ## boundary coordinate
     del_r = np.linspace(np.pi/2, -np.pi/2, num_b)[:, None]
-    x_b = np.concatenate((np.cos(del_r)*r, np.sin(del_r)*r), axis=1)
-    np.savetxt("x_b.dat", x_b)
+    x_b = np.concatenate((np.cos(del_r)*r+cir_og[0], np.sin(del_r)*r+cir_og[1]), axis=1)
+    np.savetxt("x_intf_ext.dat", x_b)
 
     ## interpolation for boundary displacement
     db_x, db_y = [], []

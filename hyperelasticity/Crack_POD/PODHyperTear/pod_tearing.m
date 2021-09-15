@@ -11,6 +11,11 @@ snapshot = snapshot(:, :, 2)';
 coord = dataset.coord(1, :, :);
 coord = squeeze(coord);
 coord_init = dataset.coord_init;
+
+dims=size(snapshot);
+snapshot = snapshot - repmat( mean(snapshot,1), [dims(1) ones(1,length(dims)-1)] );
+% snapshot=reshape(snapshot,dims(1),prod(dims(2:end)));
+
 [U_POD, S_POD, V_POD] = svd(snapshot,'econ');
 S_POD=diag(S_POD);
 
