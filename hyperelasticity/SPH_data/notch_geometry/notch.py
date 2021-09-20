@@ -19,7 +19,7 @@ def main():
     molecule = 1
     rho = 1
     l0 = 0.01
-    volume = l0*2*np.pi
+    volume = l0**2*np.pi
     mass = rho*volume
     kradius = l0*4.01
     cradius = l0*0.1

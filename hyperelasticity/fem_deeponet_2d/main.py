@@ -7,6 +7,8 @@
 """
 import os
 import numpy as np
+import scipy.io
+
 
 from dolfin import *
 from mshr import *
@@ -17,22 +19,38 @@ def main():
     path = 'Results'
     os.makedirs(path, exist_ok=True)
 
-    niter = 2
+    niter = 10
     eps = 1e-5
     theta = 0.5
     r0 = 0.3
 
-    U_scaling = 10 ## note that it is not confirmed yet!
-    S_scaling = 100
+    U_scaling = 100 ## note that it is not confirmed yet!
+    S_scaling = 10
 
     E, nu = 1.0, 0.3
     K1, K2 = 0.1, 1.5
     alpha = np.pi/2      
     kappa = 0
 
+    ##################
+    id_pick = 21
+
+    top_disp_set = scipy.io.loadmat("hyper_notch_100_nofrac_topdisp.mat")
+    top_disp = top_disp_set["disp_top"][id_pick]
+    top_coord_ref = top_disp_set["coord_top_ref"][:, :2]
+
+    dataset_sph = scipy.io.loadmat("hyper_notch_100_nofrac.mat")
+    coord_init = dataset_sph["coord_init"]
+    # snapshot = dataset["snapshot"]
+    coord = dataset_sph["coord"]
+    disp_sph = coord[id_pick] - coord_init
+    data_true = np.concatenate((coord_init[:, :2], disp_sph[:, :2] ), axis=1)
+
+
     #########################################################################
     ################################## FEM ##################################
     #########################################################################
+
     # Optimization options for the form compiler
     parameters["form_compiler"]["cpp_optimize"] = True
     ffc_options = {"optimize": True, \
@@ -57,7 +75,7 @@ def main():
 
     # Define Dirichlet boundary (x = 0 or x = 1)
     bot_disp = Expression(("0.0", "0.0"), degree=1)
-    top_disp = Expression(("t*0.0","t*0.1"), t = 1, degree=1)
+    top_disp = data2exp_2d(np.concatenate((top_coord_ref, top_disp), axis=1), V)
     bc1 = DirichletBC(V, bot_disp, bot)
     bc2 = DirichletBC(V, top_disp, top)
     bcs = [bc1, bc2]
@@ -118,14 +136,15 @@ def main():
         return mu*(I - inv(C)) + 2*K1*E1*(exp(K2*E1**2) )*outer(M1, M1) + 2*K1*E2*(exp(K2*E2**2) )*outer(M2, M2) + \
         K/2*inv(C)*(J**2 - 1)
 
+
     #########################################################################
     ################################ DeepONet ###############################
     #########################################################################
     device = 'cuda'
-    P11_path = "./CheckPts/model_chkpts.pt"
-    P12_path = "./CheckPts/model_chkpts.pt"
-    P21_path = "./CheckPts/model_chkpts.pt"
-    P22_path = "./CheckPts/model_chkpts.pt"
+    P11_path = "./opnn_p11/model_chkpts.pt"
+    P12_path = "./opnn_p12/model_chkpts.pt"
+    P21_path = "./opnn_p21/model_chkpts.pt"
+    P22_path = "./opnn_p22/model_chkpts.pt"
 
     dim_br = [60, 80, 80, 80]
     dim_tr = [2, 40, 40, 80]
@@ -160,6 +179,24 @@ def main():
     x_t_tensor = torch.tensor(x_intf, dtype=torch.float).to(device) ## tensorize the input of the trunk net
     dim_intf = x_intf.shape[0]
 
+
+    ## load true solution from Fenics
+    # p11_fem_exp = Rbf(data_true[:, 0], data_true[:, 1], data_true[:, 4])
+    # p12_fem_exp = Rbf(data_true[:, 0], data_true[:, 1], data_true[:, 5])
+    # p21_fem_exp = Rbf(data_true[:, 0], data_true[:, 1], data_true[:, 6])
+    # p22_fem_exp = Rbf(data_true[:, 0], data_true[:, 1], data_true[:, 7])
+    
+    # p11_e_mesh = p11_fem_exp(x_out[:, 0], x_out[:, 1])
+    # p12_e_mesh = p12_fem_exp(x_out[:, 0], x_out[:, 1])
+    # p21_e_mesh = p21_fem_exp(x_out[:, 0], x_out[:, 1])
+    # p22_e_mesh = p22_fem_exp(x_out[:, 0], x_out[:, 1])
+    u1_e_exp = Rbf(data_true[:, 0], data_true[:, 1], data_true[:, 2])
+    u2_e_exp = Rbf(data_true[:, 0], data_true[:, 1], data_true[:, 3])
+    
+    u1_e = u1_e_exp(x_out[:, 0], x_out[:, 1])
+    u2_e = u2_e_exp(x_out[:, 0], x_out[:, 1])
+
+
     #########################################################################
     ################################ Coupling ###############################
     #########################################################################
@@ -181,6 +218,9 @@ def main():
             Txy_tmp = np.concatenate((Txy_out, Txy_intf), axis=0) 
             T_intf = data2exp_2d(Txy_tmp, V)
 
+            Pi = psi*dx - dot(B, u)*dx - dot(T_intf, u)*ds_fem(1)
+            FF = derivative(Pi, u, v) 
+            Jac = derivative(FF, u, du)
             solve(FF == 0, u, bcs, J=Jac, form_compiler_parameters=ffc_options)
 
         ## DeepONet
@@ -202,8 +242,6 @@ def main():
         PK1_intf = projection(project(PK1, W), x_intf).reshape(-1, 2, 2) 
         lmd = np.matmul(PK1_intf, N_intf[:, :, None])[:, :, 0]
         lmd = lmd*S_scaling    
-        print(lmd.shape)
-
 
         ## dynamic theta
         # if iter == 0:
@@ -226,35 +264,28 @@ def main():
 
         ## update lambda (traction in x, y direction)
         lmd = theta*Txy_intf + (1 - theta)*lmd
-        print(lmd.shape)
 
-        ## error 
-        s_fem_pred = projection(project(PK1, W), mesh_coord)
+        ## error
+        # p_fem_pred = projection(project(PK1, W), x_out)
+        # err_1 = ((p_fem_pred[:, 0] - p11_e_mesh)**2).mean() + \
+        #         ((p_fem_pred[:, 1] - p12_e_mesh)**2).mean() + \
+        #         ((p_fem_pred[:, 2] - p21_e_mesh)**2).mean() + \
+        #         ((p_fem_pred[:, 3] - p22_e_mesh)**2).mean()
 
-        err_1 = ((s_fem_pred[:, 0])**2).mean() + \
-                ((s_fem_pred[:, 1])**2).mean() + \
-                ((s_fem_pred[:, 3])**2).mean()
-        err_2 = ((lmd/S_scaling)**2).mean()
-
-        # rela_err_1 = (abs(s_fem_pred[:, 0]) + abs(s_fem_pred[:, 1]) + abs(s_fem_pred[:, 3])).mean()
-        # rela_err_2 = abs((lmd/S_scaling)).mean()
-
-        err_his.append( np.array([err_1, err_2]) )
-        print(f'iter: {iter}, err_1: {err_1:3g}, err_2: {err_2:3g}')
-
-        ## need true solution
-        # err_1 = ((s_fem_pred[:, 0] - s11_e_mesh)**2).mean() + \
-        #         ((s_fem_pred[:, 1] - s12_e_mesh)**2).mean() + \
-        #         ((s_fem_pred[:, 3] - s22_e_mesh)**2).mean()
+        u_fem = projection(u, x_out)
+        err_1 = ((u_fem[:, 0] - u1_e)**2).mean() + \
+                ((u_fem[:, 1] - u2_e)**2).mean()
         # err_2 = ((lmd/S_scaling - t_e)**2).mean()
 
-        # rela_err_1 = (abs((s_fem_pred[:, 0] - s11_e_mesh)/s11_e_mesh.max()) + \
-        #         abs((s_fem_pred[:, 1] - s12_e_mesh)/s12_e_mesh.max()) + \
-        #         abs((s_fem_pred[:, 3] - s22_e_mesh)/s22_e_mesh.max()) ).mean()*1/3
+        # rela_err_1 = (abs((p_fem_pred[:, 0] - p11_e_mesh)/p11_e_mesh.max()) + \
+        #         abs((p_fem_pred[:, 1] - p12_e_mesh)/p12_e_mesh.max()) + \
+        #         abs((p_fem_pred[:, 2] - p21_e_mesh)/p21_e_mesh.max()) + \
+        #         abs((p_fem_pred[:, 3] - p22_e_mesh)/p22_e_mesh.max()) ).mean()
         # rela_err_2 = abs((lmd/S_scaling - t_e)/t_e.max()).mean()
 
         # err_his.append( np.array([err_1, err_2, rela_err_1, rela_err_2]) )
         # print(f'iter: {iter}, err_1: {err_1:3g}, err_2: {err_2:3g}, rela_err_1: {rela_err_1}, rela_err_2: {rela_err_2}')
+        print(f'iter: {iter}, err_1: {err_1:3g}')#, rela_err_1: {rela_err_1}')
 
     ## save
     file_name = path + "/result.xdmf"
