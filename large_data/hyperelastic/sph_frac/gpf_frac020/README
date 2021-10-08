@@ -1,0 +1,4 @@
+rand_bc_0.py: generate the SPH geometry file.
+rand_bc_1.py: generate the 1D GRF as input.
+rand_bc_2.m: get the FFT coefficient.
+rand_bc_3.py: generate the input using the FFT series.
